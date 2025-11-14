@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { createNotification } from '../lib/notifications';
 import PasswordStrengthIndicator from '../components/PasswordStrengthIndicator';
 
@@ -14,7 +14,6 @@ const NewPasswordPage = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
   const [passwordCriteria, setPasswordCriteria] = useState({
     hasInput: false,
     length: false,
@@ -24,27 +23,24 @@ const NewPasswordPage = () => {
     special: false,
   });
 
-  /**
-   * Vérifie si l’URL contient bien un token recovery valide.
-   * Supabase ne déclenche pas toujours PASSWORD_RECOVERY selon les versions,
-   * donc on vérifie manuellement.
-   */
-  useEffect(() => {
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    const type = hashParams.get("type");
-    const accessToken = hashParams.get("access_token");
+  const navigate = useNavigate();
 
-    if (type === "recovery" && accessToken) {
-      setStatus("READY");
+  // Récupérer le token depuis l'URL
+  const [token, setToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    const queryParams = new URLSearchParams(window.location.hash.split('?')[1]);
+    const t = queryParams.get('token');
+    if (t) {
+      setToken(t);
+      setStatus('READY');
     } else {
-      setError("Ce lien de réinitialisation est invalide ou a expiré.");
-      setStatus("ERROR");
+      setError('Ce lien de réinitialisation est invalide ou a expiré.');
+      setStatus('ERROR');
     }
   }, []);
 
-  /**
-   * Vérification dynamique des critères du mot de passe
-   */
+  // Vérification dynamique des critères du mot de passe
   useEffect(() => {
     setPasswordCriteria({
       hasInput: newPassword.length > 0,
@@ -56,9 +52,7 @@ const NewPasswordPage = () => {
     });
   }, [newPassword]);
 
-  /**
-   * Envoi du nouveau mot de passe
-   */
+  // Soumettre le nouveau mot de passe
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -75,27 +69,34 @@ const NewPasswordPage = () => {
       return;
     }
 
+    if (!token) {
+      setError("Lien invalide ou expiré.");
+      setStatus('ERROR');
+      return;
+    }
+
     setIsSubmitting(true);
 
-    const { error: updateError } = await supabase.auth.updateUser({
-      password: newPassword
-    });
+    const { error: updateError } = await supabase.auth.updateUser(
+      { password: newPassword },
+      { token }
+    );
 
     if (updateError) {
       setError(updateError.message || "Une erreur est survenue lors de la mise à jour.");
       setStatus('ERROR');
     } else {
       await createNotification('PASSWORD_RESET', {});
-      await supabase.auth.signOut(); // sécurité obligatoire
+      await supabase.auth.signOut();
       setStatus('SUCCESS');
+
+      // Rediriger vers la page de connexion après 2s
+      setTimeout(() => navigate('/compte'), 2000);
     }
 
     setIsSubmitting(false);
   };
 
-  /**
-   * Rendu conditionnel
-   */
   const renderContent = () => {
     if (status === 'CHECKING') {
       return (
