@@ -14,6 +14,48 @@ const NewPasswordPage = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
+
+  const navigate = useNavigate();
+
+  // ---- PARSING COMPATIBLE SUPABASE ----
+  useEffect(() => {
+    const hash = window.location.hash; // ex: #/new-password#access_token=xxx&...
+    let finalToken: string | null = null;
+
+    // CASE 1: Supabase redirect → /#/new-password#access_token=xxx
+    if (hash.includes('#')) {
+      const parts = hash.split('#'); 
+      if (parts.length >= 3) {
+        const rawParams = parts[2];
+        const params = new URLSearchParams(rawParams);
+
+        finalToken = params.get('access_token') || null;
+      }
+    }
+
+    // CASE 2: old format → /#/new-password?token=xxx
+    if (!finalToken && hash.includes('?')) {
+      const queryParams = new URLSearchParams(hash.split('?')[1]);
+      finalToken = queryParams.get('token');
+    }
+
+    // CASE 3: fallback → direct query parameters
+    if (!finalToken) {
+      const params = new URLSearchParams(window.location.search);
+      finalToken = params.get('access_token') || params.get('token');
+    }
+
+    if (finalToken) {
+      setToken(finalToken);
+      setStatus('READY');
+    } else {
+      setError('Ce lien de réinitialisation est invalide ou a expiré.');
+      setStatus('ERROR');
+    }
+  }, []);
+
+  // Password criteria
   const [passwordCriteria, setPasswordCriteria] = useState({
     hasInput: false,
     length: false,
@@ -23,24 +65,6 @@ const NewPasswordPage = () => {
     special: false,
   });
 
-  const navigate = useNavigate();
-
-  // Récupérer le token depuis l'URL
-  const [token, setToken] = useState<string | null>(null);
-
-  useEffect(() => {
-    const queryParams = new URLSearchParams(window.location.hash.split('?')[1]);
-    const t = queryParams.get('token');
-    if (t) {
-      setToken(t);
-      setStatus('READY');
-    } else {
-      setError('Ce lien de réinitialisation est invalide ou a expiré.');
-      setStatus('ERROR');
-    }
-  }, []);
-
-  // Vérification dynamique des critères du mot de passe
   useEffect(() => {
     setPasswordCriteria({
       hasInput: newPassword.length > 0,
@@ -52,7 +76,7 @@ const NewPasswordPage = () => {
     });
   }, [newPassword]);
 
-  // Soumettre le nouveau mot de passe
+  // Submit
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -68,7 +92,6 @@ const NewPasswordPage = () => {
       setError("Les mots de passe ne correspondent pas.");
       return;
     }
-
     if (!token) {
       setError("Lien invalide ou expiré.");
       setStatus('ERROR');
@@ -90,7 +113,6 @@ const NewPasswordPage = () => {
       await supabase.auth.signOut();
       setStatus('SUCCESS');
 
-      // Rediriger vers la page de connexion après 2s
       setTimeout(() => navigate('/compte'), 2000);
     }
 
